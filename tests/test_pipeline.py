@@ -135,7 +135,6 @@ def test_track_pitches_merges_close_pitch_across_short_gap():
 
 
 def test_track_pitches_drops_short_tracks():
-    dt = 256 / 22050
     cands = [
         vocal_notes.PitchCandidate(
             frame_idx=0, time=0.0, f0_hz=440.0, midi=69.0,
