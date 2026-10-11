@@ -171,6 +171,25 @@ def _cents_diff(f1: float, f2: float) -> float:
     return 1200.0 * abs(np.log2(f1 / f2))
 
 
+def _estimate_dt(candidates: List[PitchCandidate], default: float = 0.01) -> float:
+    """Robust per-frame duration estimate.
+
+    The previous implementation used ``candidates[0].time`` which is
+    ``0.0`` for the first frame and silently zeroed every duration
+    check, causing the close-remaining branch to drop the only track.
+    Instead, take the median of positive frame-to-frame deltas.
+    """
+    if not candidates:
+        return default
+    times = sorted({c.time for c in candidates if c.time > 0.0})
+    if len(times) < 2:
+        return default
+    deltas = [b - a for a, b in zip(times, times[1:]) if b > a]
+    if not deltas:
+        return default
+    return float(np.median(deltas))
+
+
 def track_pitches(candidates: List[PitchCandidate], max_voices: int = 2,
                   max_jump_cents: float = 350.0, gap_frames: int = 15,
                   min_dur: float = 0.04,
@@ -192,7 +211,7 @@ def track_pitches(candidates: List[PitchCandidate], max_voices: int = 2,
     if not frames:
         return []
 
-    dt = candidates[0].time if candidates else 0.01
+    dt = _estimate_dt(candidates)
 
     tracks = []
     next_id = 0

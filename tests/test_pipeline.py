@@ -46,6 +46,47 @@ def test_cents_diff_invalid_inputs_are_huge():
     assert vocal_notes._cents_diff(440.0, -1.0) > 1e6
 
 
+def test_estimate_dt_handles_first_frame_zero_time():
+    # The first candidate has time=0 (which previously broke the
+    # duration estimate). _estimate_dt should ignore that and recover
+    # the real frame step from the rest of the candidates.
+    dt = 256 / 22050
+    candidates = [
+        vocal_notes.PitchCandidate(
+            frame_idx=0, time=0.0, f0_hz=220.0, midi=57.0,
+            magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
+        ),
+        vocal_notes.PitchCandidate(
+            frame_idx=1, time=dt, f0_hz=220.0, midi=57.0,
+            magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
+        ),
+        vocal_notes.PitchCandidate(
+            frame_idx=2, time=2 * dt, f0_hz=220.0, midi=57.0,
+            magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
+        ),
+    ]
+    assert vocal_notes._estimate_dt(candidates) == pytest.approx(dt, rel=1e-6)
+
+
+def test_track_pitches_keeps_track_when_first_time_is_zero():
+    # Regression: with the first candidate's time=0, the previous
+    # implementation computed dt=0 and dropped the only track.
+    dt = 256 / 22050
+    candidates = [
+        vocal_notes.PitchCandidate(
+            frame_idx=t, time=t * dt, f0_hz=220.0, midi=57.0,
+            magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
+        )
+        for t in range(20)
+    ]
+    tracks = vocal_notes.track_pitches(candidates, max_voices=2, min_dur=0.04)
+    assert len(tracks) == 1
+    assert tracks[0].start_frame == 0
+    assert tracks[0].end_frame == 19
+    # duration must be a real number of seconds, not zero
+    assert (tracks[0].end_frame - tracks[0].start_frame + 1) * dt > 0.04
+
+
 def test_pitch_track_to_note_rounding():
     tr = vocal_notes.PitchTrack(track_id=0, start_frame=10, end_frame=19)
     tr.frames = list(range(10, 20))
@@ -70,16 +111,14 @@ def test_track_pitches_merges_close_pitch_across_short_gap():
     f0_b = 220.0 * (2 ** (350 / 1200))  # ~350 cents above
     candidates = []
     for t in range(0, 5):
-        # `time` on the first candidate is used as the per-frame dt
-        # fallback in track_pitches, so seed it with the real dt.
         candidates.append(vocal_notes.PitchCandidate(
-            frame_idx=t, time=(t + 1) * dt, f0_hz=f0_a, midi=57.0,
+            frame_idx=t, time=t * dt, f0_hz=f0_a, midi=57.0,
             magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
         ))
     # gap of 5 frames
     for t in range(10, 15):
         candidates.append(vocal_notes.PitchCandidate(
-            frame_idx=t, time=(t + 1) * dt, f0_hz=f0_b, midi=int(57 + 3.5),
+            frame_idx=t, time=t * dt, f0_hz=f0_b, midi=int(57 + 3.5),
             magnitude=0.5, confidence=0.9, harmonic_strength=0.5,
         ))
     tracks = vocal_notes.track_pitches(
